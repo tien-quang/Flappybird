@@ -1,6 +1,7 @@
 import pygame, sys, random
+from database import load_or_create_player, update_player_score, get_highest_score
 
-
+# ------------------------- HÀM CHUNG -------------------------
 def draw_floor():
     screen.blit(floor, (floor_x_pos, 650))
     screen.blit(floor, (floor_x_pos + 432, 650))
@@ -43,38 +44,80 @@ def bird_animation():
     return new_bird, new_bird_rect
 
 def score_display(game_state):
-    if game_state == 'main game':
-        score_surface = game_font.render(str(int(score)), True, (255, 255, 255))
-        score_rect = score_surface.get_rect(center=(216, 100))
-        screen.blit(score_surface, score_rect)
-    else:
-        score_surface = game_font.render(f'Score: {int(score)}', True, (255, 255, 255))
-        score_rect = score_surface.get_rect(center=(216, 100))
-        screen.blit(score_surface, score_rect)
+    # Hiển thị điểm người chơi
+    score_surface = game_font.render(f'{player_name}: {int(score)}', True, (255, 255, 255))
+    score_rect = score_surface.get_rect(center=(216, 100))
+    screen.blit(score_surface, score_rect)
 
-        high_surface = game_font.render(f'Best: {int(high_score)}', True, (255, 255, 255))
+    # Hiển thị điểm cao nhất tất cả người chơi góc trái
+    top_score = get_highest_score()
+    top_surface = game_font.render(f'Top: {top_score}', True, (255, 200, 0))
+    screen.blit(top_surface, (10, 10))
+
+    if game_state != 'main game':
+        # Hiển thị best cá nhân
+        high_surface = game_font.render(f'Best: {high_score}', True, (255, 255, 255))
         high_rect = high_surface.get_rect(center=(216, 630))
         screen.blit(high_surface, high_rect)
 
 def update_high_score(current, record):
     return current if current > record else record
 
-
-
+# ------------------------- INIT PYGAME -------------------------
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 screen = pygame.display.set_mode((432, 768))
 clock = pygame.time.Clock()
 game_font = pygame.font.Font('04B_19.ttf', 35)
 
+# ------------------------- PLAYER NAME INPUT -------------------------
+player_name = ""
+input_active = True
+font = pygame.font.Font('04B_19.ttf', 40)
+input_rect = pygame.Rect(66, 350, 300, 50)
+color_inactive = pygame.Color('lightskyblue3')
+color_active = pygame.Color('dodgerblue2')
+color = color_inactive
+active = False
 
+while input_active:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            active = input_rect.collidepoint(event.pos)
+            color = color_active if active else color_inactive
+        if event.type == pygame.KEYDOWN and active:
+            if event.key == pygame.K_RETURN:
+                player_name = player_name.strip() or "Player"
+                input_active = False
+            elif event.key == pygame.K_BACKSPACE:
+                player_name = player_name[:-1]
+            else:
+                if len(player_name) < 12:
+                    player_name += event.unicode
+
+    screen.fill((0, 0, 0))
+    txt_surface = font.render(player_name, True, (255, 255, 255))
+    input_rect.w = max(300, txt_surface.get_width() + 10)
+    screen.blit(txt_surface, (input_rect.x + 5, input_rect.y + 5))
+    pygame.draw.rect(screen, color, input_rect, 2)
+    info_surface = game_font.render("Enter your name:", True, (255,255,255))
+    info_rect = info_surface.get_rect(center=(216, 300))
+    screen.blit(info_surface, info_rect)
+    pygame.display.flip()
+    clock.tick(30)
+
+player_data = load_or_create_player(player_name)
+high_score = player_data.get("best_score", 0)
+
+# ------------------------- GAME VARIABLES -------------------------
 gravity = 0.4
 bird_movement = 0
 game_active = True
 score = 0
-high_score = 0
-passed_pipes = []  # để kiểm tra chim đã qua ống
-
+passed_pipes = []
 
 bg = pygame.transform.scale2x(pygame.image.load('assets/background-night.png').convert())
 floor = pygame.transform.scale2x(pygame.image.load('assets/floor.png').convert())
@@ -96,24 +139,21 @@ pipe_gap = 180
 game_over_surface = pygame.transform.scale2x(pygame.image.load('assets/message.png').convert_alpha())
 game_over_rect = game_over_surface.get_rect(center=(216, 384))
 
-
 flap_sound = pygame.mixer.Sound('sound/sfx_wing.wav')
 hit_sound = pygame.mixer.Sound('sound/sfx_hit.wav')
 score_sound = pygame.mixer.Sound('sound/sfx_point.wav')
-
 
 SPAWNPIPE = pygame.USEREVENT
 pygame.time.set_timer(SPAWNPIPE, 1400)
 BIRDFLAP = pygame.USEREVENT + 1
 pygame.time.set_timer(BIRDFLAP, 200)
 
-
+# ------------------------- GAME LOOP -------------------------
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE and game_active:
                 bird_movement = -8
@@ -125,14 +165,11 @@ while True:
                 bird_rect.center = (100, 384)
                 bird_movement = 0
                 score = 0
-
         if event.type == SPAWNPIPE:
             pipe_list.extend(create_pipe())
-
         if event.type == BIRDFLAP:
             bird_index = (bird_index + 1) % 3
             bird, bird_rect = bird_animation()
-
 
     screen.blit(bg, (0, 0))
 
@@ -146,7 +183,6 @@ while True:
         pipe_list = move_pipe(pipe_list)
         draw_pipe(pipe_list)
 
-
         for pipe in pipe_list:
             if pipe.centerx < 100 and pipe not in passed_pipes and pipe.bottom >= 600:
                 score += 1
@@ -157,9 +193,8 @@ while True:
 
     else:
         screen.blit(game_over_surface, game_over_rect)
-        high_score = update_high_score(score, high_score)
+        high_score = update_player_score(player_name, score)
         score_display('game_over')
-
 
     floor_x_pos -= 1
     draw_floor()
